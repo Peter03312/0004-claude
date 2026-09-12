@@ -1,0 +1,9 @@
+# 一次性验收服务：单元测试 + 类型检查/构建 + 针对 web 容器的端到端测试。
+# 基础镜像自带 Chromium 及全部系统依赖，版本需与 package.json 中 @playwright/test 一致。
+FROM mcr.microsoft.com/playwright:v1.48.2-jammy
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+ENV E2E_BASE_URL=http://web
+CMD ["npm", "run", "verify"]

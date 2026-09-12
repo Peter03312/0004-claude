@@ -1,0 +1,110 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f4f6f8;
+  color: #1f2933;
+}
+
+.container {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.formula {
+  background: #eef2f7;
+  border-left: 4px solid #3b82f6;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+
+.field label {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.field input {
+  padding: 0.55rem 0.75rem;
+  font-size: 1rem;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: #d64545;
+  outline: 2px solid rgba(214, 69, 69, 0.25);
+}
+
+.error {
+  color: #d64545;
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+}
+
+button[type='submit'] {
+  width: 100%;
+  padding: 0.7rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button[type='submit']:disabled {
+  background: #9aa5b1;
+  cursor: not-allowed;
+}
+
+.result-area {
+  margin-top: 1.5rem;
+  min-height: 3rem;
+}
+
+.pending {
+  color: #7b8794;
+  font-style: italic;
+}
+
+.verdict {
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  font-size: 1.05rem;
+}
+
+.verdict-status {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.verdict.released {
+  background: #e3f5e9;
+  border: 1px solid #2f9e5f;
+  color: #14532d;
+}
+
+.verdict.rejected {
+  background: #fde8e8;
+  border: 1px solid #d64545;
+  color: #7f1d1d;
+}
