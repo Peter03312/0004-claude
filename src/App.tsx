@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   calculate,
+  formatRational,
   validateFields,
   type CalculationResult,
   type FieldName,
@@ -26,7 +27,7 @@ const FIELD_META: Array<{
   { name: 'currentPressure', label: '当前压力', unit: '巴', placeholder: '例如 150' },
   { name: 'reservePressure', label: '保留压力', unit: '巴', placeholder: '例如 50' },
   { name: 'flowRate', label: '流量', unit: '升/分钟', placeholder: '例如 5' },
-  { name: 'minimumMinutes', label: '最低保障分钟数', unit: '分钟', placeholder: '例如 30' },
+  { name: 'minimumMinutes', label: '最低保障分钟数', unit: '分钟', placeholder: '例如 30 或 29.5' },
 ];
 
 export default function App() {
@@ -39,14 +40,11 @@ export default function App() {
   const validation = useMemo(() => validateFields(fields), [fields]);
 
   function handleChange(name: FieldName, value: string) {
-    const next = { ...fields, [name]: value };
-    setFields(next);
-    // 任何修改都立即使旧结论进入“待重新计算”状态；
-    // 若修改后出现非法输入，则直接清除旧结论。
+    setFields((prev) => ({ ...prev, [name]: value }));
+    // 任何修改都立即使旧结论进入“待重新计算”状态。
+    // 输入非法时结论被隐藏且计算被阻止，但“已计算过、待重算”的状态保留，
+    // 修正错误后仍明确提示待重新计算，而不是表现得像从未计算过。
     setStale(true);
-    if (!validateFields(next).valid) {
-      setResult(null);
-    }
   }
 
   function handleBlur(name: FieldName) {
@@ -133,10 +131,11 @@ export default function App() {
               {result.released ? '放行' : '不放行'}
             </p>
             <p data-testid="verdict-detail">
-              可用 {result.availableMinutes} 分钟，最低保障 {result.minimumMinutes} 分钟，
+              可用 {result.availableMinutes.toString()} 分钟，最低保障{' '}
+              {formatRational(result.minimumMinutes)} 分钟，
               {result.released
-                ? `余量 ${result.marginMinutes} 分钟。`
-                : `短缺 ${-result.marginMinutes} 分钟。`}
+                ? `余量 ${result.marginMinutes.toString()} 分钟。`
+                : `短缺 ${(-result.marginMinutes).toString()} 分钟。`}
             </p>
           </div>
         )}

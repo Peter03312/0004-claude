@@ -53,7 +53,7 @@ test('生成结果后修改字段立即标记为待重新计算，旧结论不�
   await expect(page.getByTestId('verdict-detail')).toContainText('余量 5 分钟');
 });
 
-test('非法输入阻止计算并清除旧结论', async ({ page }) => {
+test('非法输入阻止计算并清除旧结论，修正后保持待重新计算状态', async ({ page }) => {
   await fillValidForm(page);
   await page.getByTestId('calculate-button').click();
   await expect(page.getByTestId('verdict-status')).toHaveText('放行');
@@ -66,14 +66,65 @@ test('非法输入阻止计算并清除旧结论', async ({ page }) => {
   await expect(page.getByTestId('calculate-button')).toBeDisabled();
   await expect(page.getByTestId('verdict')).toHaveCount(0);
 
-  // 修正后必须重新计算才会出现结论
+  // 修正后仍应明确提示“待重新计算”，而不是表现得像从未计算过
   await page.getByTestId('field-reservePressure').fill('50');
   await expect(page.getByTestId('calculate-button')).toBeEnabled();
   await expect(page.getByTestId('verdict')).toHaveCount(0);
-  await expect(page.getByTestId('pending-hint')).toBeVisible();
+  await expect(page.getByTestId('pending-hint')).toHaveText('参数已修改，待重新计算。');
 
   await page.getByTestId('calculate-button').click();
   await expect(page.getByTestId('verdict-status')).toHaveText('放行');
+});
+
+test('回归：真实差 1 分钟时不得误判为刚好够用', async ({ page }) => {
+  // 200 ÷ 1.0000000000025 = 199.9999999995… 分钟，必须向下取整为 199
+  await page.getByTestId('field-cylinderConstant').fill('1');
+  await page.getByTestId('field-currentPressure').fill('200');
+  await page.getByTestId('field-reservePressure').fill('0');
+  await page.getByTestId('field-flowRate').fill('1.0000000000025');
+  await page.getByTestId('field-minimumMinutes').fill('200');
+  await page.getByTestId('calculate-button').click();
+
+  await expect(page.getByTestId('verdict-status')).toHaveText('不放行');
+  await expect(page.getByTestId('verdict-detail')).toContainText('可用 199 分钟');
+  await expect(page.getByTestId('verdict-detail')).toContainText('短缺 1 分钟');
+});
+
+test('回归：超大有限数值精确计算，不显示 Infinity', async ({ page }) => {
+  // 1e308 × 1e308 ÷ 1 = 1e616 分钟（双精度浮点下会溢出为 Infinity）
+  await page.getByTestId('field-cylinderConstant').fill('1e308');
+  await page.getByTestId('field-currentPressure').fill('1e308');
+  await page.getByTestId('field-reservePressure').fill('0');
+  await page.getByTestId('field-flowRate').fill('1');
+  await page.getByTestId('field-minimumMinutes').fill('1');
+  await page.getByTestId('calculate-button').click();
+
+  await expect(page.getByTestId('verdict-status')).toHaveText('放行');
+  await expect(page.getByTestId('verdict-detail')).toContainText(
+    `可用 ${'1'.padEnd(617, '0')} 分钟`,
+  );
+  await expect(page.getByTestId('verdict-detail')).not.toContainText('Infinity');
+});
+
+test('回归：支持小数最低保障分钟数', async ({ page }) => {
+  // 可用 30 分钟，保障 29.5 → 放行，余量按保守方向取整为 0
+  await page.getByTestId('field-cylinderConstant').fill('3');
+  await page.getByTestId('field-currentPressure').fill('10');
+  await page.getByTestId('field-reservePressure').fill('0');
+  await page.getByTestId('field-flowRate').fill('1');
+  await page.getByTestId('field-minimumMinutes').fill('29.5');
+  await page.getByTestId('calculate-button').click();
+
+  await expect(page.getByTestId('verdict-status')).toHaveText('放行');
+  await expect(page.getByTestId('verdict-detail')).toContainText('可用 30 分钟');
+  await expect(page.getByTestId('verdict-detail')).toContainText('最低保障 29.5 分钟');
+  await expect(page.getByTestId('verdict-detail')).toContainText('余量 0 分钟');
+
+  // 保障改为 30.5 → 不放行，短缺按保守方向取整为 1
+  await page.getByTestId('field-minimumMinutes').fill('30.5');
+  await page.getByTestId('calculate-button').click();
+  await expect(page.getByTestId('verdict-status')).toHaveText('不放行');
+  await expect(page.getByTestId('verdict-detail')).toContainText('短缺 1 分钟');
 });
 
 const invalidCases: Array<[string, string, string]> = [
