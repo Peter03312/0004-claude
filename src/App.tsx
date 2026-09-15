@@ -17,6 +17,36 @@ const EMPTY_FIELDS: RawFields = {
   minimumMinutes: '',
 };
 
+const STORAGE_KEY = 'oxygen-cylinder-checker.fields';
+
+/** 从浏览器本地存储恢复上次的表单内容（数据损坏或存储不可用时回退为空白）。 */
+function loadPersistedFields(): RawFields {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return EMPTY_FIELDS;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return EMPTY_FIELDS;
+    const record = parsed as Record<string, unknown>;
+    const fields = { ...EMPTY_FIELDS };
+    for (const key of Object.keys(fields) as FieldName[]) {
+      const value = record[key];
+      if (typeof value === 'string') fields[key] = value;
+    }
+    return fields;
+  } catch {
+    return EMPTY_FIELDS;
+  }
+}
+
+/** 把表单内容保存到浏览器本地存储，页面异常关闭或刷新后不丢失。 */
+function persistFields(fields: RawFields) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fields));
+  } catch {
+    // 存储不可用（如隐私模式）时静默忽略，不影响判定功能
+  }
+}
+
 const FIELD_META: Array<{
   name: FieldName;
   label: string;
@@ -31,7 +61,7 @@ const FIELD_META: Array<{
 ];
 
 export default function App() {
-  const [fields, setFields] = useState<RawFields>(EMPTY_FIELDS);
+  const [fields, setFields] = useState<RawFields>(loadPersistedFields);
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
   const [result, setResult] = useState<CalculationResult | null>(null);
   /** 合法结果生成后，任何字段被修改都会置为 true，直到重新计算。 */
@@ -40,7 +70,11 @@ export default function App() {
   const validation = useMemo(() => validateFields(fields), [fields]);
 
   function handleChange(name: FieldName, value: string) {
-    setFields((prev) => ({ ...prev, [name]: value }));
+    setFields((prev) => {
+      const next = { ...prev, [name]: value };
+      persistFields(next);
+      return next;
+    });
     // 任何修改都立即使旧结论进入“待重新计算”状态。
     // 输入非法时结论被隐藏且计算被阻止，但“已计算过、待重算”的状态保留，
     // 修正错误后仍明确提示待重新计算，而不是表现得像从未计算过。

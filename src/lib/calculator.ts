@@ -59,42 +59,78 @@ export interface CalculationResult {
 }
 
 const ERR_NOT_FINITE_NON_NEGATIVE = '须为有限的非负数字';
+const ERR_OUT_OF_RANGE = '数值超出可精确计算的范围';
 
 const DECIMAL_PATTERN = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/;
 
 /**
- * 把输入框字符串解析为精确十进制有理数。
- * 空串、非数字、±Infinity、NaN、超出双精度有限范围（如 1e999）一律返回 null。
+ * 可精确计算的十进制规模上限：科学计数法指数的绝对值与小数位数均不得超过它。
+ * 10000 已远超任何物理意义（双精度上限约 1e308），
+ * 但能防止 1e-999999999 之类极端输入构造出天文数字的 BigInt 使页面卡死。
  */
-export function parseDecimal(raw: string): Rational | null {
+export const MAX_DECIMAL_SCALE = 10_000;
+
+export type ParseDecimalResult =
+  | { ok: true; value: Rational }
+  | { ok: false; reason: 'invalid' | 'out-of-range' };
+
+/**
+ * 把输入框字符串解析为精确十进制有理数（带失败原因）。
+ * - invalid：空串、非数字、±Infinity、NaN、超出双精度有限范围（如 1e999）；
+ * - out-of-range：指数或小数位数超过 MAX_DECIMAL_SCALE（如 1e-999999999）。
+ */
+export function parseDecimalDetailed(raw: string): ParseDecimalResult {
   const trimmed = raw.trim();
   const match = DECIMAL_PATTERN.exec(trimmed);
-  if (!match) return null;
+  if (!match) return { ok: false, reason: 'invalid' };
   // “有限”按双精度语义把关：1e999 等字面量虽可表示为有理数，但按非有限拒绝。
-  if (!Number.isFinite(Number(trimmed))) return null;
+  if (!Number.isFinite(Number(trimmed))) return { ok: false, reason: 'invalid' };
 
   const [, sign, mantissa, expPart] = match;
   const dotIndex = mantissa.indexOf('.');
   const intPart = dotIndex === -1 ? mantissa : mantissa.slice(0, dotIndex);
   const fracPart = dotIndex === -1 ? '' : mantissa.slice(dotIndex + 1);
+  const exp = expPart === undefined ? 0n : BigInt(expPart.replace(/^\+/, ''));
+
+  if (
+    fracPart.length > MAX_DECIMAL_SCALE ||
+    exp > BigInt(MAX_DECIMAL_SCALE) ||
+    exp < BigInt(-MAX_DECIMAL_SCALE)
+  ) {
+    return { ok: false, reason: 'out-of-range' };
+  }
 
   let num = BigInt((intPart === '' ? '0' : intPart) + fracPart);
   let den = 10n ** BigInt(fracPart.length);
-  const exp = expPart === undefined ? 0n : BigInt(expPart.replace(/^\+/, ''));
   if (exp >= 0n) {
     num *= 10n ** exp;
   } else {
     den *= 10n ** -exp;
   }
   if (sign === '-') num = -num;
-  return { num, den };
+  return { ok: true, value: { num, den } };
 }
 
-/** 解析并要求非负；非法或负数返回 null。 */
-function parseNonNegative(raw: string): Rational | null {
-  const value = parseDecimal(raw);
-  if (value === null || value.num < 0n) return null;
-  return value;
+/**
+ * 把输入框字符串解析为精确十进制有理数。
+ * 非法或超出可计算范围时返回 null。
+ */
+export function parseDecimal(raw: string): Rational | null {
+  const result = parseDecimalDetailed(raw);
+  return result.ok ? result.value : null;
+}
+
+/** 解析并要求非负；返回有理数或对应的错误信息。 */
+function parseNonNegative(raw: string): { value: Rational | null; error?: string } {
+  const parsed = parseDecimalDetailed(raw);
+  if (!parsed.ok) {
+    return {
+      value: null,
+      error: parsed.reason === 'out-of-range' ? ERR_OUT_OF_RANGE : ERR_NOT_FINITE_NON_NEGATIVE,
+    };
+  }
+  if (parsed.value.num < 0n) return { value: null, error: ERR_NOT_FINITE_NON_NEGATIVE };
+  return { value: parsed.value };
 }
 
 /** 比较两个有理数：a < b 返回 -1，相等返回 0，a > b 返回 1。 */
@@ -114,38 +150,38 @@ export function validateFields(fields: RawFields): ValidationResult {
   const errors: FieldErrors = {};
 
   const cylinderConstant = parseNonNegative(fields.cylinderConstant);
-  if (cylinderConstant === null) {
-    errors.cylinderConstant = ERR_NOT_FINITE_NON_NEGATIVE;
-  } else if (cylinderConstant.num === 0n) {
+  if (cylinderConstant.error !== undefined) {
+    errors.cylinderConstant = cylinderConstant.error;
+  } else if (cylinderConstant.value!.num === 0n) {
     errors.cylinderConstant = '瓶常数必须大于 0';
   }
 
   const currentPressure = parseNonNegative(fields.currentPressure);
-  if (currentPressure === null) {
-    errors.currentPressure = ERR_NOT_FINITE_NON_NEGATIVE;
+  if (currentPressure.error !== undefined) {
+    errors.currentPressure = currentPressure.error;
   }
 
   const reservePressure = parseNonNegative(fields.reservePressure);
-  if (reservePressure === null) {
-    errors.reservePressure = ERR_NOT_FINITE_NON_NEGATIVE;
+  if (reservePressure.error !== undefined) {
+    errors.reservePressure = reservePressure.error;
   }
 
   const flowRate = parseNonNegative(fields.flowRate);
-  if (flowRate === null) {
-    errors.flowRate = ERR_NOT_FINITE_NON_NEGATIVE;
-  } else if (flowRate.num === 0n) {
+  if (flowRate.error !== undefined) {
+    errors.flowRate = flowRate.error;
+  } else if (flowRate.value!.num === 0n) {
     errors.flowRate = '流量必须大于 0';
   }
 
   const minimumMinutes = parseNonNegative(fields.minimumMinutes);
-  if (minimumMinutes === null) {
-    errors.minimumMinutes = ERR_NOT_FINITE_NON_NEGATIVE;
+  if (minimumMinutes.error !== undefined) {
+    errors.minimumMinutes = minimumMinutes.error;
   }
 
   if (
-    currentPressure !== null &&
-    reservePressure !== null &&
-    compareRationals(reservePressure, currentPressure) > 0
+    currentPressure.value !== null &&
+    reservePressure.value !== null &&
+    compareRationals(reservePressure.value, currentPressure.value) > 0
   ) {
     errors.reservePressure = '保留压力不得高于当前压力';
   }
@@ -156,11 +192,11 @@ export function validateFields(fields: RawFields): ValidationResult {
     errors,
     values: valid
       ? {
-          cylinderConstant: cylinderConstant as Rational,
-          currentPressure: currentPressure as Rational,
-          reservePressure: reservePressure as Rational,
-          flowRate: flowRate as Rational,
-          minimumMinutes: minimumMinutes as Rational,
+          cylinderConstant: cylinderConstant.value as Rational,
+          currentPressure: currentPressure.value as Rational,
+          reservePressure: reservePressure.value as Rational,
+          flowRate: flowRate.value as Rational,
+          minimumMinutes: minimumMinutes.value as Rational,
         }
       : undefined,
   };

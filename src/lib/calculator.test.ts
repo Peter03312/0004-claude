@@ -57,6 +57,23 @@ describe('parseDecimal', () => {
     expect(parseDecimal('NaN')).toBeNull();
     expect(parseDecimal('1e999')).toBeNull();
   });
+
+  it('拒绝指数或小数位数极端的输入（防止构造天文数字 BigInt 卡死页面）', () => {
+    // 值舍入为 0、能通过有限性检查，但精确表示需要 10^999999999 的分母
+    expect(parseDecimal('1e-999999999')).toBeNull();
+    expect(parseDecimal('1e-10001')).toBeNull();
+    expect(parseDecimal('1e10001')).toBeNull();
+    expect(parseDecimal(`0.${'0'.repeat(10_001)}1`)).toBeNull();
+    expect(parseDecimal(`1.${'1'.repeat(10_001)}`)).toBeNull();
+  });
+
+  it('接受规模上限以内的输入', () => {
+    expect(parseDecimal('1e308')).not.toBeNull();
+    expect(parseDecimal('1e-308')).not.toBeNull();
+    expect(parseDecimal('1e10000')).toBeNull(); // 值本身已超出双精度有限范围
+    expect(parseDecimal('1e-10000')).not.toBeNull(); // 边界：指数恰为 -10000
+    expect(parseDecimal(`0.${'0'.repeat(9_999)}1`)).not.toBeNull();
+  });
 });
 
 describe('validateFields', () => {
@@ -117,6 +134,12 @@ describe('validateFields', () => {
     const result = validateFields(fieldsWith({ [name]: value }));
     expect(result.valid).toBe(false);
     expect(result.errors[name]).toBeTruthy();
+  });
+
+  it('极端指数输入被判定为超出可计算范围', () => {
+    const result = validateFields(fieldsWith({ flowRate: '1e-999999999' }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.flowRate).toBe('数值超出可精确计算的范围');
   });
 
   it('瓶常数为 0 时拒绝', () => {

@@ -89,6 +89,9 @@ button[type='submit']:disabled {
   border-radius: 8px;
   padding: 1rem 1.25rem;
   font-size: 1.05rem;
+  /* 超长精确结果（数百位整数）在容器内换行，不撑宽页面 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .verdict-status {

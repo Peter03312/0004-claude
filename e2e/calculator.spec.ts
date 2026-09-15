@@ -90,7 +90,7 @@ test('回归：真实差 1 分钟时不得误判为刚好够用', async ({ page 
   await expect(page.getByTestId('verdict-detail')).toContainText('短缺 1 分钟');
 });
 
-test('回归：超大有限数值精确计算，不显示 Infinity', async ({ page }) => {
+test('回归：超大有限数值精确计算，不显示 Infinity 且不撑宽页面', async ({ page }) => {
   // 1e308 × 1e308 ÷ 1 = 1e616 分钟（双精度浮点下会溢出为 Infinity）
   await page.getByTestId('field-cylinderConstant').fill('1e308');
   await page.getByTestId('field-currentPressure').fill('1e308');
@@ -104,6 +104,47 @@ test('回归：超大有限数值精确计算，不显示 Infinity', async ({ pa
     `可用 ${'1'.padEnd(617, '0')} 分钟`,
   );
   await expect(page.getByTestId('verdict-detail')).not.toContainText('Infinity');
+
+  // 617 位结果必须换行展示，页面不得出现横向溢出
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(0);
+});
+
+test('回归：极端指数输入被明确拒绝，页面保持响应且可继续计算', async ({ page }) => {
+  await fillValidForm(page);
+  // 1e-999999999 的精确表示需要 10^999999999 量级的大整数，必须被拦截
+  await page.getByTestId('field-flowRate').fill('1e-999999999');
+  await page.getByTestId('field-flowRate').blur();
+
+  await expect(page.getByTestId('error-flowRate')).toHaveText('数值超出可精确计算的范围');
+  await expect(page.getByTestId('calculate-button')).toBeDisabled();
+  await expect(page.getByTestId('verdict')).toHaveCount(0);
+
+  // 页面仍然响应：修正后可正常计算（若页面卡死，本测试将超时失败）
+  await page.getByTestId('field-flowRate').fill('5');
+  await expect(page.getByTestId('calculate-button')).toBeEnabled();
+  await page.getByTestId('calculate-button').click();
+  await expect(page.getByTestId('verdict-status')).toHaveText('放行');
+});
+
+test('回归：表单内容在页面刷新后恢复', async ({ page }) => {
+  await fillValidForm(page);
+  await page.getByTestId('calculate-button').click();
+  await expect(page.getByTestId('verdict-status')).toHaveText('放行');
+
+  await page.reload();
+
+  // 五个字段的输入全部恢复
+  await expect(page.getByTestId('field-cylinderConstant')).toHaveValue('10');
+  await expect(page.getByTestId('field-currentPressure')).toHaveValue('150');
+  await expect(page.getByTestId('field-reservePressure')).toHaveValue('50');
+  await expect(page.getByTestId('field-flowRate')).toHaveValue('5');
+  await expect(page.getByTestId('field-minimumMinutes')).toHaveValue('120');
+  // 结论不随刷新残留，需重新计算
+  await expect(page.getByTestId('verdict')).toHaveCount(0);
+  await expect(page.getByTestId('pending-hint')).toHaveText('请输入参数并计算。');
 });
 
 test('回归：支持小数最低保障分钟数', async ({ page }) => {
